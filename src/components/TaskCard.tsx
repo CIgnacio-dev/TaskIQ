@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useDraggable } from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import type { Task, TaskStatus } from "../utils/types";
 
 const PRIORITY_LABELS: Record<Task["priority"], string> = {
@@ -33,7 +35,8 @@ const PRIORITY_UI: Record<
   medium: {
     border: "border-amber-400/60",
     glow: "shadow-[0_0_15px_rgba(251,191,36,0.25)]",
-    tooltip: "Prioridad media: importante, pero no bloqueante. Planifícala pronto.",
+    tooltip:
+      "Prioridad media: importante, pero no bloqueante. Planifícala pronto.",
   },
   high: {
     border: "border-red-500/70",
@@ -41,6 +44,27 @@ const PRIORITY_UI: Record<
     tooltip: "Prioridad alta: idealmente deberías enfocarte en esto hoy.",
   },
 };
+
+function getAgeLabel(createdAt: string) {
+  const created = new Date(createdAt);
+  const now = new Date();
+  const diffMs = now.getTime() - created.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffHours < 1) return "Hace menos de 1h";
+  if (diffHours < 24) return `Hace ${diffHours}h`;
+  if (diffDays === 1) return "Hace 1 día";
+  return `Hace ${diffDays} días`;
+}
+
+function isStale(createdAt: string) {
+  const created = new Date(createdAt);
+  const now = new Date();
+  const diffMs = now.getTime() - created.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays >= 3;
+}
 
 interface TaskCardProps {
   task: Task;
@@ -60,6 +84,18 @@ export function TaskCard({
   const [isEditing, setIsEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState(task.title);
 
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({
+      id: task.id,
+    });
+
+  const style = transform
+    ? {
+        transform: CSS.Transform.toString(transform),
+        opacity: isDragging ? 0.8 : 1,
+      }
+    : undefined;
+
   const priorityUi = PRIORITY_UI[task.priority];
 
   const handleBlur = () => {
@@ -74,26 +110,45 @@ export function TaskCard({
 
   return (
     <article
+      ref={setNodeRef}
+      style={style}
       className={`group rounded-lg border bg-slate-900/90 p-3 text-sm transition-all duration-200 ${priorityUi.border} ${priorityUi.glow}`}
     >
       <div className="flex items-start justify-between gap-2">
-        {isEditing ? (
-          <input
-            className="w-full rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none border border-slate-600 focus:border-indigo-400"
-            value={draftTitle}
-            onChange={(e) => setDraftTitle(e.target.value)}
-            onBlur={handleBlur}
-            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-            autoFocus
-          />
-        ) : (
-          <h3
-            className="font-medium text-slate-100 cursor-text"
-            onClick={() => setIsEditing(true)}
+        <div className="flex items-start gap-2">
+          {/* Handle de drag */}
+          <button
+            type="button"
+            className="mt-0.5 cursor-grab text-slate-500 hover:text-slate-200 active:cursor-grabbing"
+            {...listeners}
+            {...attributes}
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Arrastrar tarea"
           >
-            {task.title}
-          </h3>
-        )}
+            ⋮⋮
+          </button>
+
+          {isEditing ? (
+            <input
+              className="w-full rounded-md bg-slate-800 px-2 py-1 text-xs text-slate-100 outline-none border border-slate-600 focus:border-indigo-400"
+              value={draftTitle}
+              onChange={(e) => setDraftTitle(e.target.value)}
+              onBlur={handleBlur}
+              onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+              autoFocus
+            />
+          ) : (
+            <h3
+              className="font-medium text-slate-100 cursor-text"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditing(true);
+              }}
+            >
+              {task.title}
+            </h3>
+          )}
+        </div>
 
         <button
           className="text-xs text-slate-500 hover:text-red-400"
@@ -132,6 +187,24 @@ export function TaskCard({
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Edad de la tarea */}
+      <div className="mt-2 flex items-center justify-between text-[11px]">
+        <span
+          className={`rounded-full px-2 py-0.5 ${
+            isStale(task.createdAt)
+              ? "bg-red-500/10 text-red-300 border border-red-500/40"
+              : "bg-slate-800 text-slate-300 border border-slate-700"
+          }`}
+        >
+          {getAgeLabel(task.createdAt)}
+        </span>
+        {isStale(task.createdAt) && task.status !== "done" && (
+          <span className="text-amber-300">
+            ⚠ Esta tarea lleva mucho tiempo abierta
+          </span>
+        )}
       </div>
 
       {/* Selects de prioridad y estado */}

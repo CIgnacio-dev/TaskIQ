@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useDroppable } from "@dnd-kit/core";
 import type { Task, TaskStatus } from "../utils/types";
 import { TaskCard } from "./TaskCard";
-
 
 const STATUS_LABELS: Record<TaskStatus, string> = {
   todo: "Por hacer",
@@ -11,16 +11,21 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   done: "Hechas",
 };
 
-interface KanbanColumnProps {
+const WIP_LIMITS: Record<TaskStatus, number> = {
+  todo: 999,
+  doing: 3,
+  done: 999,
+};
+
+export interface KanbanColumnProps {
   status: TaskStatus;
   tasks: Task[];
   onAddTask: (title: string, status: TaskStatus) => void;
   onUpdateTaskStatus: (id: string, status: TaskStatus) => void;
   onUpdateTaskTitle: (id: string, title: string) => void;
-  onUpdatePriority: (id: string, priority: Task["priority"]) => void; // 👈 NUEVO
+  onUpdatePriority: (id: string, priority: Task["priority"]) => void;
   onRemoveTask: (id: string) => void;
 }
-
 
 export function KanbanColumn({
   status,
@@ -28,7 +33,7 @@ export function KanbanColumn({
   onAddTask,
   onUpdateTaskStatus,
   onUpdateTaskTitle,
-  onUpdatePriority, // 👈 aquí
+  onUpdatePriority,
   onRemoveTask,
 }: KanbanColumnProps) {
   const [newTitle, setNewTitle] = useState("");
@@ -39,6 +44,16 @@ export function KanbanColumn({
   );
 
   const count = tasksForColumn.length;
+  const wipLimit = WIP_LIMITS[status];
+  const isOverLimit = count > wipLimit;
+
+  const { setNodeRef, isOver } = useDroppable({
+    id: `column-${status}`,
+    data: {
+      type: "column",
+      status,
+    },
+  });
 
   const handleAdd = () => {
     if (!newTitle.trim()) return;
@@ -47,15 +62,41 @@ export function KanbanColumn({
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl bg-slate-900/40 p-4 border border-slate-800">
+    <section
+      ref={setNodeRef}
+      className={`flex flex-col gap-3 rounded-xl border p-4 transition-colors ${
+        isOver
+          ? "border-indigo-500 bg-slate-900"
+          : "border-slate-800 bg-slate-900/40"
+      }`}
+    >
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-200">
-          {STATUS_LABELS[status]}
-        </h2>
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-200">
+            {STATUS_LABELS[status]}
+          </h2>
+          {status === "doing" && (
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Límite recomendado: {wipLimit}
+            </p>
+          )}
+        </div>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs ${
+            isOverLimit
+              ? "bg-red-500/20 text-red-300"
+              : "bg-slate-800 text-slate-300"
+          }`}
+        >
           {count}
         </span>
       </header>
+
+      {isOverLimit && status === "doing" && (
+        <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/40 rounded-md px-2 py-1">
+          Demasiadas tareas en progreso. Reduce el WIP para mejorar el foco.
+        </p>
+      )}
 
       <div className="flex gap-2">
         <input
@@ -74,24 +115,23 @@ export function KanbanColumn({
       </div>
 
       <div className="mt-2 flex flex-col gap-2">
-  {tasksForColumn.map((task) => (
-    <TaskCard
-      key={task.id}
-      task={task}
-      onUpdateStatus={onUpdateTaskStatus}
-      onUpdateTitle={onUpdateTaskTitle}
-      onUpdatePriority={onUpdatePriority}  // 👈 AQUÍ
-      onRemove={onRemoveTask}
-    />
-  ))}
+        {tasksForColumn.map((task) => (
+          <TaskCard
+            key={task.id}
+            task={task}
+            onUpdateStatus={onUpdateTaskStatus}
+            onUpdateTitle={onUpdateTaskTitle}
+            onUpdatePriority={onUpdatePriority}
+            onRemove={onRemoveTask}
+          />
+        ))}
 
-  {tasksForColumn.length === 0 && (
-    <p className="text-xs text-slate-500 italic">
-      Sin tareas en esta columna.
-    </p>
-  )}
-</div>
-
+        {tasksForColumn.length === 0 && (
+          <p className="text-xs text-slate-500 italic">
+            Sin tareas en esta columna.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
